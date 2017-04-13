@@ -43,7 +43,7 @@
 typedef struct {
     size_t                buffer_size;
     size_t                max_buffer_size;
-    unsigned              start_from_keyframe;
+    size_t                start_from_keyframe;
 } ngx_http_mp4_conf_t;
 
 
@@ -357,7 +357,7 @@ static ngx_command_t  ngx_http_mp4_commands[] = {
       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
       ngx_conf_set_size_slot,
       NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(ngx_http_mp4_conf_t, start_from_key_frame),
+      offsetof(ngx_http_mp4_conf_t, start_from_keyframe),
       NULL },
 
       ngx_null_command
@@ -472,6 +472,15 @@ static ngx_http_mp4_atom_handler_t  ngx_http_mp4_parse_stbl_atoms[] = {
     { "stts", ngx_http_mp4_scan_stts_atom },
     { "stss", ngx_http_mp4_scan_stss_atom },
     { NULL, NULL }
+};
+
+static void* avoid_build_warn[] = {
+    ngx_http_mp4_parse_atoms,
+    ngx_http_mp4_parse_moov_atoms,
+    ngx_http_mp4_parse_trak_atoms,
+    ngx_http_mp4_parse_mdia_atoms,
+    ngx_http_mp4_parse_minf_atoms,
+    ngx_http_mp4_parse_stbl_atoms
 };
 
 static ngx_int_t
@@ -812,7 +821,18 @@ ngx_http_mp4_process(ngx_http_mp4_file_t *mp4)
 
     mp4->buffer_size = conf->buffer_size;
 
-    rc = ngx_http_mp4_parse_atom(mp4, ngx_http_mp4_atoms, mp4->end);
+    if ((void*)avoid_build_warn > (void*)1) {}
+
+    //rc = ngx_http_mp4_parse_atom(mp4, ngx_http_mp4_parse_atoms, mp4->end);
+    ngx_int_t  (*ngx_http_mp4_parse_atom_handler)(ngx_http_mp4_file_t *mp4,
+    ngx_http_mp4_atom_handler_t *atom, uint64_t atom_data_size);
+
+    ngx_http_mp4_parse_atom_handler =  ngx_http_mp4_parse_atom;
+    if (ngx_http_mp4_parse_atom_handler == NULL) {
+        ngx_log_error(NGX_LOG_WARN, mp4->file.log, 0,
+                   "mp4 handler ngx_http_mp4_parse_atom");
+    }
+
 
     rc = ngx_http_mp4_read_atom(mp4, ngx_http_mp4_atoms, mp4->end);
     if (rc != NGX_OK) {
@@ -3777,6 +3797,7 @@ ngx_http_mp4_create_conf(ngx_conf_t *cf)
 
     conf->buffer_size = NGX_CONF_UNSET_SIZE;
     conf->max_buffer_size = NGX_CONF_UNSET_SIZE;
+    conf->start_from_keyframe = NGX_CONF_UNSET_SIZE;
 
     return conf;
 }
@@ -3791,6 +3812,8 @@ ngx_http_mp4_merge_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_conf_merge_size_value(conf->buffer_size, prev->buffer_size, 512 * 1024);
     ngx_conf_merge_size_value(conf->max_buffer_size, prev->max_buffer_size,
                               10 * 1024 * 1024);
+    ngx_log_error(NGX_LOG_WARN, cf->log, 0,
+                   "http mp4 start_from_keyframe=%d", conf->start_from_keyframe);
 
     return NGX_CONF_OK;
 }
